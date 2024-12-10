@@ -7,7 +7,8 @@ class SlurmScheduler:
     "mpi_procs": { "description": "MPI process", "default": 1, "format": r'^[1-9]\d*$'},
     "omp_threads": { "description": "OMP threads", "default": 1, "format": r'^[1-9]\d*$'},
     "ppn": { "description": "Process per nodes", "default": 1, "format": r'^[1-9]\d*$'},
-    "walltime": { "description": "Limit on elapsed time", "default": "24:00:00", "format": r'^\d+:\d{2}:\d{2}$'}
+    "walltime": { "description": "Limit on elapsed time", "default": "24:00:00", "format": r'^\d+:\d{2}:\d{2}$'},
+    "partition": { "description": "Slurm partition on which to launch the job, leave empty to use the default partition", "default": "", "format": r'\w*'}
   }
 
   @staticmethod
@@ -19,6 +20,7 @@ class SlurmScheduler:
       raise Exception("mpi_procs, omp_threads, and ppn must be larger than 1")
     if (mpi*omp)%ppn != 0:
       raise Exception("(mpi_procs * omp_threads) must be a multiple of ppn")
+    # No particular checks made on "partition" parameter
 
   @staticmethod
   def parent_script(parameters: dict, job_file: pathlib.Path, work_dir: pathlib.Path) -> str:
@@ -27,12 +29,17 @@ class SlurmScheduler:
 #SBATCH --nodes={nodes}
 #SBATCH --ntasks-per-node={ppn}
 #SBATCH --time={walltime}
+{partition_setting}
 . {job_file}
 '''
     ppn = int(parameters['ppn'])
     nodes = int(int(parameters['mpi_procs'])*int(parameters['omp_threads'])/ppn)
     walltime = parameters['walltime']
-    return template.format(nodes=nodes, ppn=ppn, walltime=walltime, job_file=job_file)
+    partition = parameters['partition']
+    if partition:
+      # If partition was set, then we add the line to the script template
+      partition = f"#SBATCH --partition={partition}"
+    return template.format(nodes=nodes, ppn=ppn, walltime=walltime, job_file=job_file, partition_setting=partition)
 
   @staticmethod
   def submit_job(script_path: pathlib.Path, work_dir: pathlib.Path, log_dir: pathlib.Path, log: io.TextIOBase, parameters: dict) -> Tuple[str,str]:
